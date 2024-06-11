@@ -13,6 +13,7 @@ Opzioni:
 - ```address```: specifica l'indirizzo IP, obbligatorio se si configura l'interfaccia come static, può comprendere anche la netmask, es. ```192.168.1.1/24```
 - ```netmask```: specifica la netmask, es. ```255.255.0.0```
 - ```gateway```: specifica l'indirizzo IP del default gateway
+- ```hwaddress ether <mac>```: specifica il mac address dell'interfaccia
 - ```post-up```: permette di specificare comandi da eseguire ogni volta che viene tirata su l'interfaccia
 - ```vlan-raw-device```: **non usata a lezione, ma la wiki di debian dice di usarla**, se l'interfaccia è un'interfaccia virtuale su una vlan, serve per specificare quale interfaccia fisica deve utilizzare, ad esempio per avere un'interfaccia virtuale su vlan 222 sull'interfaccia fisica eth0:
 
@@ -89,7 +90,7 @@ route add -host <host_ip> gw <gateway_ip>
 ```
 ip route add <host_ip>/32 via <gateway_ip>
 ```
-**N.B.** in ```ip route``` nell'ip dell'host bisogna ricordarsi ```/32``` (altrimenti se minore di 32 indica una subnet), inoltre in alcuni casi può esserci bisogno di specificare l'interfaccia:
+**N.B.** in ```ip route``` nell'ip dell'host bisogna ricordarsi ```/32``` (altrimenti se minore di 32 indica una subnet), inoltre in alcuni casi può esserci bisogno di specificare l'interfaccia, soprattutto se **l'host di destinazione è nella stessa LAN ma ha una subnet diversa, es. per i gateway**:
 ```
 ip route add <host_ip>/32 dev <ethX>
 ```
@@ -108,3 +109,33 @@ route add default gw <gateway_ip>
 ip route add default via <gateway_ip>
 ```
 Oppure settando l'opzione ```gateway``` dell'interfaccia in ```/etc/network/interfaces```.
+
+## DHCP/DNS
+Per DHCP/DNS si usa il servizio **dnsmasq**, che si abilita all'avvio con
+```
+systemctl enable dnsmasq
+```
+e può essere avviato/riavviato manualmente con
+```
+service dnsmasq <start/restart>
+```
+dnsmasq è configurato tramite il file ```/etc/dnsmasq.conf``` con i seguenti parametri:
+- ```no-resolv```: non cerca su altri nameservers
+- ```read-ethers```: legge i contenuti di ```/etc/ethers```, che è uno dei modi per configurare degli ip statici, aggiungendo righe:
+    ```
+    <mac>   <ip>
+    ```
+- ```interface=<ethX>```: usa l'interfaccia ```ethX``` per il DHCP
+- ```domain=<...>```: imposta il dominio
+- ```dhcp-option=<option>```: opzioni del dhcp, le più importanti:
+  1. ```<3/option:router>,<gateway_ip>```: imposta l'ip del gateway dei client DHCP, **non setta il suo** 
+  2. ```<6/option:dns-server>,<dns_ip>```: imposta l'ip del dns dei client DHCP
+
+    Es. così si setta il gateway a ```10.10.10.254``` e il dns a ```8.8.8.8```:
+    ```
+    dhcp-option=option:router,10.10.10.254
+    dhcp-option=option:dns-server,8.8.8.8
+    ```
+- ```dhcp-range=<ip_low>,<ip_high>,<time>```, assegna il range degli ip assegnabili dal dhcp, da ```ip_low``` a ```ip_high``` inclusi, con lease time ```time``` (es. ```1h```)
+- ```dhcp-host=<mac>,<hostname>,<ip>,<time>```, assegna staticamente ```ip``` a ```mac```, dandogli anche l'hostname con lease time ```time```, questa è un'alternativa ad usare i file ```/etc/ethers``` e ```/etc/hosts```
+- ```address=/<addr>/<ip>```, sovrascrive l'indirizzo di ```ip``` con ```addr```, alternativa al file ```/etc/hosts```
