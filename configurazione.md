@@ -129,7 +129,7 @@ dnsmasq è configurato tramite il file ```/etc/dnsmasq.conf``` con i seguenti pa
 - ```domain=<...>```: imposta il dominio
 - ```dhcp-option=<option>```: opzioni del dhcp, le più importanti:
   1. ```<3/option:router>,<gateway_ip>```: imposta l'ip del gateway dei client DHCP, **non setta il suo** 
-  2. ```<6/option:dns-server>,<dns_ip>```: imposta l'ip del dns dei client DHCP
+  2. ```<6/option:dns-server>,<dns_ip>```: imposta l'ip del DNS dei client DHCP, se il server fa anche da DNS (quindi mette il proprio ip come ```dns_ip```), allora risolverà gli hostname in base alla configurazione statica e in base al file ```/etc/hosts``` 
 
     Es. così si setta il gateway a ```10.10.10.254``` e il dns a ```8.8.8.8```:
     ```
