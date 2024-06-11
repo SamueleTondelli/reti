@@ -139,3 +139,26 @@ dnsmasq è configurato tramite il file ```/etc/dnsmasq.conf``` con i seguenti pa
 - ```dhcp-range=<ip_low>,<ip_high>,<time>```, assegna il range degli ip assegnabili dal dhcp, da ```ip_low``` a ```ip_high``` inclusi, con lease time ```time``` (es. ```1h```)
 - ```dhcp-host=<mac>,<hostname>,<ip>,<time>```, assegna staticamente ```ip``` a ```mac```, dandogli anche l'hostname con lease time ```time```, questa è un'alternativa ad usare i file ```/etc/ethers``` e ```/etc/hosts```
 - ```address=/<addr>/<ip>```, sovrascrive l'indirizzo di ```ip``` con ```addr```, alternativa al file ```/etc/hosts```
+
+## Traffic Shaping
+Se è necessario semplicemento limitare la banda in uscita su un host, si può implementare senza classi con un tbf
+```
+tc qdisc add dev <ethX> root tbf rate <rate> latency <latency> burst <burst>
+```
+
+```rate```, ```latency``` e ```burst``` hanno le unità di misura, se non specificati di solito:
+- ```latency``` è sulle decine di millisecondi
+- ```burst``` è sulle migliaia (10k, 15k, 1539...)
+
+Se invece è necessario limitare la banda in uscita in base al destinatario, allora bisogna usare qdisc classful, es:
+```
+tc qdisc add dev <ethX> root handle 1: htb default 20
+tc class add dev <ethX> parent 1: classid 1:1 htb rate 100Mbit burst 15k
+tc class add dev <ethX> parent 1:1 classid 1:10 htb rate <custom_rate> burst 15k
+tc class add dev <ethX> parent 1:1 classid 1:20 htb rate <default_rate> burst 15k
+tc qdisc add dev <ethX> parent 1:10 handle 10: pfifo limit 50
+tc qdisc add dev <ethX> parent 1:20 handle 20: pfifo limit 50
+tc filter add dev <ethX> protocol ip parent 1:0 prio 1 u32 match ip dst <ip_slow> flowid 1:10
+```
+
+In questo caso, sull'interfaccia ```ethX```, il traffico verso ```ip_slow``` viene mandato dal dilter verso la classe 1:10 con un rate custom ```custom_rate```, il resto del traffico viene invece mandato verso la classe 1:20 con il rate ```default_rate```.
