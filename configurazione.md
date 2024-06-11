@@ -140,6 +140,24 @@ dnsmasq è configurato tramite il file ```/etc/dnsmasq.conf``` con i seguenti pa
 - ```dhcp-host=<mac>,<hostname>,<ip>,<time>```, assegna staticamente ```ip``` a ```mac```, dandogli anche l'hostname con lease time ```time```, questa è un'alternativa ad usare i file ```/etc/ethers``` e ```/etc/hosts```
 - ```address=/<addr>/<ip>```, sovrascrive l'indirizzo di ```ip``` con ```addr```, alternativa al file ```/etc/hosts```
 
+In presenza di VLAN, bisogna aggiungere dei parametri a:
+- ```dhcp-range```, si aggiunge come _primo_ parametro ```set:vlan<id>```
+- ```dhcp-option```, si aggiunge come _primo_ parametro ```tag:vlan<id>```
+- ```dhcp-host```, si aggiunge come _ultimo_ parametro ```set:vlan<id>```
+
+es. di configurazione con VLAN:
+```
+no-resolv
+read-ethers
+interface=eth0.10
+domain=reti.org
+dhcp-range=set:vlan10,10.0.1.2,10.0.1.125,24h
+dhcp-option=tag:vlan10,option:netmask,255.255.255.128
+dhcp-option=tag:vlan10,option:router,10.0.1.126
+dhcp-option=tag:vlan10,option:dns-server,10.0.1.126
+dhcp-host=02:04:06:11:11:22,H1,10.0.1.1,set:vlan10
+```
+
 ## Traffic Shaping
 Se è necessario semplicemento limitare la banda in uscita su un host, si può implementare senza classi con un tbf
 ```
