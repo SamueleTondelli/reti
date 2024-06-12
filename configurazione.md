@@ -180,3 +180,115 @@ tc filter add dev <ethX> protocol ip parent 1:0 prio 1 u32 match ip dst <ip_slow
 ```
 
 In questo caso, sull'interfaccia ```ethX```, il traffico verso ```ip_slow``` viene mandato dal dilter verso la classe 1:10 con un rate custom ```custom_rate```, il resto del traffico viene invece mandato verso la classe 1:20 con il rate ```default_rate```.
+
+## Firewall
+Si utilizza ```iptables```, la sua configurazione non viene memorizzata tra un avvio e l'altro, quindi si possono usare:
+```
+iptables-save > <file>
+```
+```
+iptables-restore < <file>
+```
+
+Per visualizzare le regole di una tabella:
+```
+iptables -t <tabella> -L -v -n
+```
+
+Per eliminarela regola ```n```, iniziando a contare da 1, di una catena:
+```
+iptables -t <tabella> -D <catena> <n>
+```
+
+Per eliminare tutte le regole di una catena:
+```
+iptables -t <tabella> -F <catena>
+```
+
+Per il firewall si opera sulla tabella ```filter```, essa contiene 3 catene:
+1. ```INPUT```, regole per i pacchetti che hanno come destinazione questo host
+2. ```FORWARD```, regole per i pacchetti in transito
+3. ```OUTPUT```, regole per i pacchetti in uscita da questo host
+
+Per ogni catena, si può impostare una policy di default:
+```
+iptables -t <tabella> -P <catena> <ACCEPT/DROP>
+```
+es. per bloccare tutto i pacchetti in transito su questo host:
+```
+iptables -t filter -P FORWARD DROP
+```
+Si possono poi aggiungere ulteriori regole alle catene tramite:
+```
+iptables -t filter -A <catena> {opzioni} -j <policy>
+```
+
+le ```{opzioni}``` possibili sono:
+- ```-p <protocol>```, imposta il protocollo, può essere ```tcp```, ```udp```, ```icmp```,...
+- ```-i <ethX>```/```-o <ethX>```, imposta l'interfaccia d'ingresso/uscita
+- ```-s <ip>```/```-d <ip>```, imposta l'ip/subnet della sorgente/destinazione
+- ```--sport <port>```/```--dport <port>```, imposta la porta in entrata/uscita, se sono porte legate a protocolli comuni spesso si può mettere il nome del protocollo al posto del numero di porta
+- ```-m state --state <stato>```, permette di fare regole dinamiche che dipendono dallo stato della connessione, una regola può contenere più stati e possono essere:
+    1. ```NEW```, fa riferimento a pacchetti che aprono la connessione, se si fanno regole dinamiche è **fondamentale** che da client verso server siano ammessi i ```NEW```
+    2. ```ESTABLISHED```, fa riferimento a pacchetti di connessioni già aperte in precedenza
+    3. ```RELATED```, fa riferimento a pacchetti legati a connessioni già stabilite, serve in alcuni casi per protocolli tipo ```icmp```, ```ftp``` (nella regola che usa come porta sorgente dal server ```ftp-data```),...
+
+Infine la ```policy``` determina cosa bisogna fare ai pacchetti che soddisfano ```{opzioni}```:
+- ```ACCEPT```
+- ```DROP```
+- ```REJECT```, come ```DROP``` ma invia anche un messaggio a chi ha inviato il pacchetto droppato
+- ```QUEUE```, rende il pacchetto disponibile per elaborazioni in user space
+- ```LOG```, logga informazioni relative al pacchetto
+
+Esempio, per abilitare le connessioni verso un server ```<ip_server>``` di un protocollo sulla porta ```<port>``` passando per l'interfaccia esterna ```<eth_ext>``` e l'interfaccia interna ```<eth_int>```:
+
+client => server
+```
+iptables -A FORWARD -p <protocol> --dport <port> -i <eth_ext> -o <eth_int> -d <ip_server> -m state --state NEW,ESTABLISHED -j ACCEPT
+```
+
+server => client
+```
+iptables -A FORWARD -p <protocol> --sport <port> -i <eth_int> -o <eth_ext> -s <ip_server> -m state --state ESTABLISHED -j ACCEPT
+```
+
+## NAT
+Si usa sempre ```iptables``` sulla tabella ```nat``` con 3 catene:
+1. ```PREROUTING```, permette di modificare **l'ip di destinazione** dei pacchetti provenienti dall'esterno
+2. ```OUTPUT```, permette di modificare **l'ip di destinazione** dei pecchetti **generati localmente**
+3. ```POSTROUTING```, permette di modificare **l'ip sorgente** di tutti i pacchetti in uscita
+
+Per aggiungere regole di NAT:
+```
+iptables -t nat -A <catena> {opzioni} -j <policy>
+```
+
+Le ```{opzioni}``` sono le stesse del firewall.
+
+Le policy possibili sono:
+- ```SNAT --to-source <ip:porta>```, modifica ip e porta sorgenti del pacchetto
+- ```MASQUERADE```, come ```SNAT```, però sostituisce l'ip sorgente con quello del interfaccia dell'host che fa NAT da cui uscirà, serve in caso l'ip dell'host che fa NAT sia dinamico
+- ```DNAT --to-destination <ip:porta>```, modifica ip e porta di destinazione di un pacchetto
+- ```REDIRECT```, come ```DNAT```, però sostituisce l'ip di destinazione con quello dell'host che fa NAT
+
+Esempi:
+1. Abilitare il NAT per permettere agli host sotto NAT di comunicare con l'esterno:
+```
+iptables -t nat -A POSTROUTING -o <ethX> -j SNAT --to-source <ip_pubblico>
+```
+dove ```<ethX>``` è l'interfaccia pubblica e ```<ip_pubblico>``` è l'ip pubblico, in caso esso sia dinamico si usa:
+```
+iptables -t nat -A POSTROUTING  -o <ethX> -j MASQUERADE
+```
+2. Esporre un servizio su un host con indirizzo ```<ip_locale>``` sulla porta ```<port>``` e protocollo ```<protocol>```:
+```
+iptables -t nat -A PREROUTING -p <protocol> -d <ip_pubblico> --dport <port> -j DNAT --to-destination <ip_locale>
+```
+3. Fare un Transparent Proxy che redirige tutti i pacchetti ```tcp``` verso la porta ```80``` alla porta ```8080``` dell'host ```192.168.1.1```:
+```
+iptables -t nat -A PREROUTING -p tcp -i <ethX> --dport 80 -j DNAT --to-destination 192.168.1.1:8080
+```
+Se il proxy si trova sull'host che fa NAT allora si può usare ```REDIRECT```:
+```
+iptables -t nat -A PREROUTING -p tcp -i <ethX> --dport 80 -j REDIRECT --to-port 8080
+```
